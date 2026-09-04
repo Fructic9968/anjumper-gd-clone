@@ -3,7 +3,7 @@
    • Канвас 16:9 с фиксированным логическим разрешением
    • Адаптивность через CSS + учёт devicePixelRatio
    • Игровой цикл на requestAnimationFrame с delta time
-   • FPS-счётчик для проверки
+   • FPS-счётчик + интеграция модуля игрока (player.js)
    ============================================================ */
 
 'use strict';
@@ -20,11 +20,15 @@ const CONFIG = {
 
   MAX_DELTA: 0.1,    // сек. Потолок Δt: защита от «телепорта» после сворачивания вкладки
   FPS_UPDATE: 0.5,   // сек. Как часто обновлять HUD со счётчиком FPS
-  SCROLL_SPEED: 360, // px/сек. Базовая скорость мира (в игре — скорость движения уровня влево)
-  DEBUG: true,       // рисовать временную сцену, пока нет модуля level.js
+  SCROLL_SPEED: 360, // px/сек. Базовая скорость мира (движение уровня влево)
+  DEBUG: true,       // отладочная информация и хитбоксы на экране
 };
 
-// Общая палитра — пригодится в player.js и level.js
+// Уровень земли: верхний край пола. От него отталкиваются
+// игрок (player.js) и будущие блоки уровня (level.js).
+CONFIG.GROUND_Y = CONFIG.HEIGHT - 120;
+
+// Общая палитра — ей пользуются все модули
 const COLORS = {
   bgTop:      '#101532',
   bgBottom:   '#1c1040',
@@ -41,15 +45,15 @@ const COLORS = {
 const Game = {
   canvas: null,
   ctx: null,
+  player: null,      // экземпляр куба из player.js
   state: 'boot',     // позже: 'menu' | 'playing' | 'dead' (см. ui.js)
   time: 0,           // суммарное время с запуска (сек)
-  lastDelta: 0,      // Δt последнего кадра (сек) — для вывода на экран
-  worldX: 0,         // сколько мир «прокрутился» влево (для параллакса)
+  lastDelta: 0,      // Δt последнего кадра (сек)
+  worldX: 0,         // сколько мир «прокрутился» влево
 };
 
-// Константы временной сцены
-const CELL = 72;                          // размер клетки сетки
-const GROUND_Y = CONFIG.HEIGHT - 120;     // уровень земли
+// Константа временной сцены
+const CELL = 72; // размер клетки сетки
 
 // Ссылки на HUD (инициализируются в init)
 let fpsValueEl = null;
@@ -62,58 +66,57 @@ function initCanvas() {
   Game.canvas = document.getElementById('game');
   Game.ctx = Game.canvas.getContext('2d');
   fitCanvas();
-  // Слушаем ресайз на случай смены devicePixelRatio (зум браузера, перенос на другой монитор)
+  // Слушаем ресайз на случай смены devicePixelRatio (зум, другой монитор)
   window.addEventListener('resize', fitCanvas);
 }
 
 function fitCanvas() {
-  // Внутренний буфер канваса = логика × devicePixelRatio → чёткая картинка на Retina.
+  // Внутренний буфер = логика × devicePixelRatio → чёткость на Retina
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   Game.canvas.width  = CONFIG.WIDTH  * dpr;
   Game.canvas.height = CONFIG.HEIGHT * dpr;
-  // Дальше рисуем в привычных координатах 1280×720 — про DPR забываем.
+  // Дальше рисуем в координатах 1280×720 — про DPR забываем
   Game.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 /* ────────────────────────────────────────────────────────────
    4. ИГРОВОЙ ЦИКЛ: requestAnimationFrame + delta time
    ──────────────────────────────────────────────────────────── */
-let lastTime = 0;   // timestamp предыдущего кадра
-let fpsTimer = 0;   // аккумулятор времени для FPS
-let fpsFrames = 0;  // аккумулятор кадров для FPS
+let lastTime = 0;
+let fpsTimer = 0;
+let fpsFrames = 0;
 
 function loop(now) {
-  // Регистрируем следующий кадр сразу, даже если текущий упадёт с ошибкой
   requestAnimationFrame(loop);
 
-  // --- Считаем время кадра (Δt в секундах) ---
-  if (lastTime === 0) lastTime = now;          // первый кадр после старта/фокуса
+  // --- Время кадра (Δt в секундах) ---
+  if (lastTime === 0) lastTime = now;
   let dt = (now - lastTime) / 1000;
   lastTime = now;
-  if (dt > CONFIG.MAX_DELTA) dt = CONFIG.MAX_DELTA; // кламп против скачков
+  if (dt > CONFIG.MAX_DELTA) dt = CONFIG.MAX_DELTA;
 
   Game.time += dt;
   Game.lastDelta = dt;
 
-  update(dt);   // логика
-  render();     // отрисовка
-  trackFPS(dt); // статистика в HUD
+  update(dt);
+  render();
+  trackFPS(dt);
 }
 
 /* ────────────────────────────────────────────────────────────
    5. UPDATE — логика кадра
    ──────────────────────────────────────────────────────────── */
 function update(dt) {
-  // Временная сцена: мир равномерно едет влево.
-  // Именно так потом будет двигаться уровень относительно игрока.
+  // Мир равномерно едет влево — игрок по X неподвижен
   Game.worldX += CONFIG.SCROLL_SPEED * dt;
 
-  // Подключаем будущие модули, если файл уже добавлен в index.html.
-  // Пока файлов нет — условия просто не срабатывают.
-  if (window.Input)  Input.update?.(dt);
-  if (window.Player) Player.update?.(dt);
-  if (window.Level)  Level.update?.(dt);
-  if (window.UI)     UI.update?.(dt);
+  // Куб обновляется первым — уровню позже нужны его актуальные координаты
+  if (Game.player) Game.player.update(dt);
+
+  // Подключаем будущие модули, если они уже добавлены в index.html
+  if (window.Input) Input.update?.(dt);
+  if (window.Level) Level.update?.(dt);
+  if (window.UI)    UI.update?.(dt);
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -131,17 +134,17 @@ function render() {
 
   if (CONFIG.DEBUG) drawDebugScene(ctx);
 
-  // Позже порядок будет таким:
-  // Level.render(ctx);  → блоки и шипы
-  // Player.render(ctx); → куб
-  // UI.render(ctx);     → прогресс-бар и меню
+  // Порядок слоёв: фон/сетка → уровень → игрок → интерфейс
+  // Позже сюда добавится Level.render(ctx) перед игроком.
+  if (Game.player) Game.player.draw(ctx);
 }
 
 // Временная сцена: сетка, земля, статус ядра
 function drawDebugScene(ctx) {
   const W = CONFIG.WIDTH;
   const H = CONFIG.HEIGHT;
-  const offset = -(Game.worldX % CELL); // сдвиг сетки влево
+  const GY = CONFIG.GROUND_Y;
+  const offset = -(Game.worldX % CELL);
 
   // --- Сетка фона: вертикали бегут, горизонтали статичны ---
   ctx.strokeStyle = COLORS.grid;
@@ -149,9 +152,9 @@ function drawDebugScene(ctx) {
   ctx.beginPath();
   for (let x = offset; x <= W + CELL; x += CELL) {
     ctx.moveTo(x, 0);
-    ctx.lineTo(x, GROUND_Y);
+    ctx.lineTo(x, GY);
   }
-  for (let y = GROUND_Y - CELL; y > 0; y -= CELL) {
+  for (let y = GY - CELL; y > 0; y -= CELL) {
     ctx.moveTo(0, y);
     ctx.lineTo(W, y);
   }
@@ -159,7 +162,7 @@ function drawDebugScene(ctx) {
 
   // --- Земля ---
   ctx.fillStyle = COLORS.ground;
-  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillRect(0, GY, W, H - GY);
 
   // Неоновая кромка земли
   ctx.save();
@@ -168,8 +171,8 @@ function drawDebugScene(ctx) {
   ctx.shadowColor = COLORS.groundLine;
   ctx.shadowBlur = 14;
   ctx.beginPath();
-  ctx.moveTo(0, GROUND_Y);
-  ctx.lineTo(W, GROUND_Y);
+  ctx.moveTo(0, GY);
+  ctx.lineTo(W, GY);
   ctx.stroke();
   ctx.restore();
 
@@ -177,44 +180,37 @@ function drawDebugScene(ctx) {
   ctx.strokeStyle = 'rgba(0, 229, 255, 0.18)';
   ctx.lineWidth = 2;
   for (let x = offset; x <= W + CELL; x += CELL) {
-    ctx.strokeRect(x + 8, GROUND_Y + 14, CELL - 16, CELL - 28);
+    ctx.strokeRect(x + 8, GY + 14, CELL - 16, CELL - 28);
   }
 
-  // --- «Призрак» будущего куба (сюда придёт player.js) ---
-  const ghostSize = 40;
-  const ghostX = 220;
-  const ghostY = GROUND_Y - ghostSize;
-  ctx.save();
-  ctx.strokeStyle = COLORS.accent;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([6, 5]);
-  ctx.strokeRect(ghostX, ghostY, ghostSize, ghostSize);
-  ctx.setLineDash([]);
-  ctx.fillStyle = 'rgba(255, 179, 0, 0.65)';
-  ctx.font = '11px "JetBrains Mono", monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('player.js', ghostX + ghostSize / 2, ghostY - 10);
-  ctx.restore();
-
-  // --- Статус ядра ---
+  // --- Статус ядра и телеметрия ---
   ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.text;
   ctx.font = '44px "Russo One", "Arial Black", sans-serif';
-  ctx.fillText('CORE.JS', W / 2, H / 2 - 74);
+  ctx.fillText('CORE.JS', W / 2, H / 2 - 92);
 
   ctx.fillStyle = 'rgba(234, 246, 255, 0.75)';
   ctx.font = '18px "JetBrains Mono", monospace';
-  ctx.fillText('Игровой цикл активен · requestAnimationFrame', W / 2, H / 2 - 34);
+  ctx.fillText('player.js подключён · [ПРОБЕЛ] / клик — прыжок (временно)', W / 2, H / 2 - 52);
 
-  // Живые показатели кадра — доказательство, что Δt считается
   ctx.fillStyle = COLORS.accent;
-  ctx.font = '16px "JetBrains Mono", monospace';
+  ctx.font = '15px "JetBrains Mono", monospace';
   ctx.fillText(
-    `Δt = ${(Game.lastDelta * 1000).toFixed(1)} мс · мир прокручен: ${Math.floor(Game.worldX)} px`,
-    W / 2, H / 2 - 2
+    `Δt = ${(Game.lastDelta * 1000).toFixed(1)} мс · мир: ${Math.floor(Game.worldX)} px`,
+    W / 2, H / 2 - 26
   );
 
-  // Служебная строка: текущее разрешение и DPR
+  // Живые показатели физики куба — удобно проверять гравитацию
+  if (Game.player) {
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.85)';
+    ctx.fillText(
+      `куб: y = ${Game.player.y.toFixed(0)} px · vY = ${Game.player.velocityY.toFixed(0)} px/с · ` +
+      (Game.player.onGround ? 'на земле' : 'в воздухе'),
+      W / 2, H / 2 - 4
+    );
+  }
+
+  // Служебная строка: разрешение и DPR
   ctx.textAlign = 'left';
   ctx.fillStyle = 'rgba(234, 246, 255, 0.35)';
   ctx.font = '12px "JetBrains Mono", monospace';
@@ -225,8 +221,7 @@ function drawDebugScene(ctx) {
 }
 
 /* ────────────────────────────────────────────────────────────
-   7. FPS-СЧЁТЧИК (обновляем HUD раз в CONFIG.FPS_UPDATE сек,
-      чтобы не дёргать DOM каждый кадр)
+   7. FPS-СЧЁТЧИК
    ──────────────────────────────────────────────────────────── */
 function trackFPS(dt) {
   fpsFrames++;
@@ -250,17 +245,41 @@ function init() {
 
   initCanvas();
 
-  // Возврат на вкладку: обнуляем метку времени, чтобы первый кадр
-  // после паузы получил Δt ≈ 0, а не «прыжок» в несколько секунд.
+  // Возврат на вкладку: обнуляем метку времени против «скачка» Δt
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) lastTime = 0;
+  });
+
+  // --- Создаём игрока, если модуль уже загружен ---
+  // Защита: без раскомментированного <script src="player.js">
+  // ядро продолжит работать в режиме заглушки.
+  if (typeof Player !== 'undefined') {
+    Game.player = new Player(); // x=220, size=40 по умолчанию
+  }
+
+  /* ── ВРЕМЕННОЕ УПРАВЛЕНИЕ ────────────────────────────────
+     Только для проверки физики. Будет полностью заменено
+     модулем input.js: там появятся правильный hold-to-jump,
+     буфер прыжка и поддержка всех устройств.                */
+  const tryJump = () => { if (Game.player) Game.player.jump(); };
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault(); // чтобы страница не скроллилась
+      tryJump();          // повторные срабатывания при удержании = черновик hold
+    }
+  });
+
+  Game.canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); // мышь и тач обрабатываются одинаково
+    tryJump();
   });
 
   requestAnimationFrame(loop);
   console.log('[core.js] Ядро запущено:', `${CONFIG.WIDTH}×${CONFIG.HEIGHT}, 16:9`);
 }
 
-// Экспортируем в глобальную область — модули будут читать CONFIG, COLORS и Game
+// Экспорт для остальных модулей
 window.CONFIG = CONFIG;
 window.COLORS = COLORS;
 window.Game = Game;
