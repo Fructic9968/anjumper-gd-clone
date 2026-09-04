@@ -1,15 +1,15 @@
 /* ============================================================
    core.js — ядро игры
-   • Канвас 16:9 с фиксированным логическим разрешением
-   • Адаптивность через CSS + учёт devicePixelRatio
+   • Канвас 16:9, адаптивность, devicePixelRatio
    • Игровой цикл на requestAnimationFrame с delta time
-   • FPS-счётчик + интеграция модуля игрока (player.js)
+   • FPS-счётчик, счётчик попыток, вспышка смерти
+   • Интеграция: input.js + player.js + level.js
    ============================================================ */
 
 'use strict';
 
 /* ────────────────────────────────────────────────────────────
-   1. КОНФИГУРАЦИЯ (позже её читают все модули)
+   1. КОНФИГУРАЦИЯ (её читают все модули)
    ──────────────────────────────────────────────────────────── */
 const CONFIG = {
   // Логическое разрешение ВСЕГДА 1280×720 (16:9).
@@ -17,15 +17,15 @@ const CONFIG = {
   // поэтому физика и координаты от размера окна не зависят.
   WIDTH: 1280,
   HEIGHT: 720,
+  CELL: 72,          // размер одной клетки мира (блоки, шипы, сетка)
 
-  MAX_DELTA: 0.1,    // сек. Потолок Δt: защита от «телепорта» после сворачивания вкладки
-  FPS_UPDATE: 0.5,   // сек. Как часто обновлять HUD со счётчиком FPS
-  SCROLL_SPEED: 360, // px/сек. Базовая скорость мира (движение уровня влево)
+  MAX_DELTA: 0.1,    // сек. Потолок Δt против «телепорта» после сворачивания
+  FPS_UPDATE: 0.5,   // сек. Период обновления HUD со счётчиком FPS
+  SCROLL_SPEED: 360, // px/сек. Скорость движения уровня влево
   DEBUG: true,       // отладочная информация и хитбоксы на экране
 };
 
-// Уровень земли: верхний край пола. От него отталкиваются
-// игрок (player.js) и будущие блоки уровня (level.js).
+// Уровень земли: верхний край пола
 CONFIG.GROUND_Y = CONFIG.HEIGHT - 120;
 
 // Общая палитра — ей пользуются все модули
@@ -45,15 +45,15 @@ const COLORS = {
 const Game = {
   canvas: null,
   ctx: null,
-  player: null,      // экземпляр куба из player.js
-  state: 'boot',     // позже: 'menu' | 'playing' | 'dead' (см. ui.js)
+  player: null,      // экземпляр куба (player.js)
+  level: null,       // экземпляр уровня (level.js)
+  state: 'playing',  // позже: 'menu' | 'playing' | 'dead' (см. ui.js)
+  attempts: 1,       // счётчик попыток — позже переедет в ui.js
+  flash: 0,          // таймер белой вспышки при смерти
   time: 0,           // суммарное время с запуска (сек)
   lastDelta: 0,      // Δt последнего кадра (сек)
-  worldX: 0,         // сколько мир «прокрутился» влево
+  worldX: 0,         // прокрутка фоновой сетки
 };
-
-// Константа временной сцены
-const CELL = 72; // размер клетки сетки
 
 // Ссылки на HUD (инициализируются в init)
 let fpsValueEl = null;
@@ -66,7 +66,6 @@ function initCanvas() {
   Game.canvas = document.getElementById('game');
   Game.ctx = Game.canvas.getContext('2d');
   fitCanvas();
-  // Слушаем ресайз на случай смены devicePixelRatio (зум, другой монитор)
   window.addEventListener('resize', fitCanvas);
 }
 
@@ -104,23 +103,30 @@ function loop(now) {
 }
 
 /* ────────────────────────────────────────────────────────────
-   5. UPDATE — логика кадра
+   5. UPDATE — логика кадра (порядок модулей важен!)
    ──────────────────────────────────────────────────────────── */
 function update(dt) {
-  // Мир равномерно едет влево — игрок по X неподвижен
+  // Фоновая сетка едет с той же скоростью, что и уровень
   Game.worldX += CONFIG.SCROLL_SPEED * dt;
 
-  // Куб обновляется первым — уровню позже нужны его актуальные координаты
+  // 1) Ввод: читаем зажатие и буфер, пробуем прыгнуть
+  if (window.Input) Input.update?.(dt);
+
+  // 2) Игрок: гравитация, прыжок, земля
   if (Game.player) Game.player.update(dt);
 
-  // Подключаем будущие модули, если они уже добавлены в index.html
-  if (window.Input) Input.update?.(dt);
-  if (window.Level) Level.update?.(dt);
-  if (window.UI)    UI.update?.(dt);
+  // 3) Уровень: движение влево, коллизии, смерть/сброс
+  if (Game.level) Game.level.update(dt);
+
+  // 4) Интерфейс (подключится вместе с ui.js)
+  if (window.UI) UI.update?.(dt);
+
+  // Затухание вспышки смерти
+  if (Game.flash > 0) Game.flash = Math.max(0, Game.flash - dt);
 }
 
 /* ────────────────────────────────────────────────────────────
-   6. RENDER — отрисовка кадра
+   6. RENDER — отрисовка кадра (порядок слоёв важен!)
    ──────────────────────────────────────────────────────────── */
 function render() {
   const ctx = Game.ctx;
@@ -134,27 +140,34 @@ function render() {
 
   if (CONFIG.DEBUG) drawDebugScene(ctx);
 
-  // Порядок слоёв: фон/сетка → уровень → игрок → интерфейс
-  // Позже сюда добавится Level.render(ctx) перед игроком.
+  // Слои: фон → уровень → игрок → эффекты
+  if (Game.level)  Game.level.draw(ctx);
   if (Game.player) Game.player.draw(ctx);
+
+  // Белая вспышка в момент смерти
+  if (Game.flash > 0) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${(Game.flash / 0.22) * 0.7})`;
+    ctx.fillRect(0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
+  }
 }
 
-// Временная сцена: сетка, земля, статус ядра
+// Фоновая сетка, земля и служебная информация
 function drawDebugScene(ctx) {
   const W = CONFIG.WIDTH;
   const H = CONFIG.HEIGHT;
   const GY = CONFIG.GROUND_Y;
-  const offset = -(Game.worldX % CELL);
+  const C = CONFIG.CELL;
+  const offset = -(Game.worldX % C);
 
-  // --- Сетка фона: вертикали бегут, горизонтали статичны ---
+  // --- Сетка фона ---
   ctx.strokeStyle = COLORS.grid;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let x = offset; x <= W + CELL; x += CELL) {
+  for (let x = offset; x <= W + C; x += C) {
     ctx.moveTo(x, 0);
     ctx.lineTo(x, GY);
   }
-  for (let y = GY - CELL; y > 0; y -= CELL) {
+  for (let y = GY - C; y > 0; y -= C) {
     ctx.moveTo(0, y);
     ctx.lineTo(W, y);
   }
@@ -164,7 +177,6 @@ function drawDebugScene(ctx) {
   ctx.fillStyle = COLORS.ground;
   ctx.fillRect(0, GY, W, H - GY);
 
-  // Неоновая кромка земли
   ctx.save();
   ctx.strokeStyle = COLORS.groundLine;
   ctx.lineWidth = 3;
@@ -176,37 +188,44 @@ function drawDebugScene(ctx) {
   ctx.stroke();
   ctx.restore();
 
-  // Клетки на земле, бегущие влево вместе с миром
   ctx.strokeStyle = 'rgba(0, 229, 255, 0.18)';
   ctx.lineWidth = 2;
-  for (let x = offset; x <= W + CELL; x += CELL) {
-    ctx.strokeRect(x + 8, GY + 14, CELL - 16, CELL - 28);
+  for (let x = offset; x <= W + C; x += C) {
+    ctx.strokeRect(x + 8, GY + 14, C - 16, C - 28);
   }
+
+  // --- Счётчик попыток (позже переедет в ui.js) ---
+  ctx.textAlign = 'left';
+  ctx.fillStyle = COLORS.text;
+  ctx.font = '22px "Russo One", "Arial Black", sans-serif';
+  ctx.fillText(`ПОПЫТКА № ${Game.attempts}`, 16, 36);
+  ctx.fillStyle = 'rgba(234, 246, 255, 0.4)';
+  ctx.font = '11px "JetBrains Mono", monospace';
+  ctx.fillText('attempts · сброс при столкновении', 16, 54);
 
   // --- Статус ядра и телеметрия ---
   ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.text;
   ctx.font = '44px "Russo One", "Arial Black", sans-serif';
-  ctx.fillText('CORE.JS', W / 2, H / 2 - 92);
+  ctx.fillText('CORE.JS', W / 2, H / 2 - 118);
 
   ctx.fillStyle = 'rgba(234, 246, 255, 0.75)';
-  ctx.font = '18px "JetBrains Mono", monospace';
-  ctx.fillText('player.js подключён · [ПРОБЕЛ] / клик — прыжок (временно)', W / 2, H / 2 - 52);
+  ctx.font = '17px "JetBrains Mono", monospace';
+  ctx.fillText('input.js + level.js подключены · зажми [ПРОБЕЛ] для серии прыжков', W / 2, H / 2 - 80);
 
   ctx.fillStyle = COLORS.accent;
-  ctx.font = '15px "JetBrains Mono", monospace';
+  ctx.font = '14px "JetBrains Mono", monospace';
   ctx.fillText(
-    `Δt = ${(Game.lastDelta * 1000).toFixed(1)} мс · мир: ${Math.floor(Game.worldX)} px`,
-    W / 2, H / 2 - 26
+    `Δt = ${(Game.lastDelta * 1000).toFixed(1)} мс · скорость мира: ${CONFIG.SCROLL_SPEED} px/с`,
+    W / 2, H / 2 - 56
   );
 
-  // Живые показатели физики куба — удобно проверять гравитацию
   if (Game.player) {
     ctx.fillStyle = 'rgba(0, 229, 255, 0.85)';
     ctx.fillText(
       `куб: y = ${Game.player.y.toFixed(0)} px · vY = ${Game.player.velocityY.toFixed(0)} px/с · ` +
       (Game.player.onGround ? 'на земле' : 'в воздухе'),
-      W / 2, H / 2 - 4
+      W / 2, H / 2 - 36
     );
   }
 
@@ -250,30 +269,10 @@ function init() {
     if (!document.hidden) lastTime = 0;
   });
 
-  // --- Создаём игрока, если модуль уже загружен ---
-  // Защита: без раскомментированного <script src="player.js">
-  // ядро продолжит работать в режиме заглушки.
-  if (typeof Player !== 'undefined') {
-    Game.player = new Player(); // x=220, size=40 по умолчанию
-  }
-
-  /* ── ВРЕМЕННОЕ УПРАВЛЕНИЕ ────────────────────────────────
-     Только для проверки физики. Будет полностью заменено
-     модулем input.js: там появятся правильный hold-to-jump,
-     буфер прыжка и поддержка всех устройств.                */
-  const tryJump = () => { if (Game.player) Game.player.jump(); };
-
-  window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') {
-      e.preventDefault(); // чтобы страница не скроллилась
-      tryJump();          // повторные срабатывания при удержании = черновик hold
-    }
-  });
-
-  Game.canvas.addEventListener('pointerdown', (e) => {
-    e.preventDefault(); // мышь и тач обрабатываются одинаково
-    tryJump();
-  });
+  // --- Подключение модулей с защитой от отсутствия файла ---
+  if (typeof Player !== 'undefined') Game.player = new Player(); // куб
+  if (typeof Level  !== 'undefined') Game.level  = new Level();  // уровень
+  if (window.Input) Input.init();                                 // управление
 
   requestAnimationFrame(loop);
   console.log('[core.js] Ядро запущено:', `${CONFIG.WIDTH}×${CONFIG.HEIGHT}, 16:9`);
