@@ -144,6 +144,8 @@ body::before {
   height: 100%;
 }
 
+.stage canvas { touch-action: none; }
+
 /* Угловые скобки «прицела» поверх канваса */
 .stage__frame { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 
