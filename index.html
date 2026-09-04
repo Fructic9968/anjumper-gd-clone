@@ -56,10 +56,17 @@
   </main>
 
       <!-- ═══ МОДУЛИ ИГРЫ ═══ -->
-  <script src="core.js"></script>
-  <script src="input.js"></script>
-  <script src="player.js"></script>
-  <script src="level.js"></script>
+  <!-- 1. Сначала файлы настроек и констант, которые прислал Qwen -->
+<script src="constants.js"></script>
+
+<!-- 2. Затем файлы игровых объектов -->
+<script src="player.js"></script>
+<script src="level.js"></script>
+<script src="input.js"></script>
+
+<!-- 3. И самым последним подключается движок, который всё запускает -->
+<script src="core.js"></script>
+
   <!-- <script src="ui.js"></script> -->
 
 </body>
