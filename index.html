@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0a0e1e" />
+  <title>GD Clone — Core v0.1</title>
+
+  <!-- Шрифты: Russo One (заголовки/логотип) + JetBrains Mono (HUD, цифры) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Russo+One&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Декоративные фигуры фона: куб и шипы — символы Geometry Dash -->
+  <div class="decor decor--cube" aria-hidden="true"></div>
+  <div class="decor decor--cube decor--cube-2" aria-hidden="true"></div>
+  <div class="decor decor--spike decor--spike-1" aria-hidden="true"></div>
+  <div class="decor decor--spike decor--spike-2" aria-hidden="true"></div>
+
+  <main class="scene">
+
+    <!-- Верхняя панель -->
+    <header class="topbar">
+      <span class="logo">GD<span class="logo__slash">//</span>CLONE</span>
+      <span class="build-tag">build 0.1 · core.js</span>
+    </header>
+
+    <!-- Сцена 16:9: канвас + HUD -->
+    <div class="stage" id="stage">
+      <canvas id="game" width="1280" height="720"></canvas>
+
+      <!-- HUD: FPS-счётчик (обновляется из core.js) -->
+      <div class="hud">
+        <div class="hud__fps" id="fps-counter">
+          <span class="hud__dot" aria-hidden="true"></span>
+          <span class="hud__nums">
+            <span class="hud__value"><b id="fps-value">--</b><small>FPS</small></span>
+            <span class="hud__ms" id="fps-ms">— мс/кадр</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Угловые скобки поверх канваса -->
+      <div class="stage__frame" aria-hidden="true"></div>
+    </div>
+
+    <!-- Подсказка по управлению (заработает после input.js) -->
+    <footer class="hint">
+      <kbd>Space</kbd> / клик / тач — прыжок <span class="hint__soon">· появится в input.js</span>
+    </footer>
+
+  </main>
+
+  <!-- ═══ МОДУЛИ ИГРЫ ═══
+       Раскомментируй по мере добавления файлов.
+       Порядок важен: ядро → ввод → игрок → уровень → интерфейс. -->
+  <script src="core.js"></script>
+  <!-- <script src="input.js"></script> -->
+  <!-- <script src="player.js"></script> -->
+  <!-- <script src="level.js"></script> -->
+  <!-- <script src="ui.js"></script> -->
+
+</body>
+</html>

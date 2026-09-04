@@ -1,0 +1,236 @@
+/* ============================================================
+   style.css — оформление каркаса
+   Палитра в духе Geometry Dash: глубокий космос + неон
+   ============================================================ */
+
+:root {
+  --bg:        #0a0e1e;
+  --panel:     #070a18;
+  --cyan:      #00e5ff;
+  --amber:     #ffb300;
+  --green:     #3dfc8e;
+  --ink:       #eaf6ff;
+  --ink-dim:   rgba(234, 246, 255, .55);
+  --font-display: 'Russo One', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background:
+    radial-gradient(1000px 620px at 10% -10%, rgba(0, 229, 255, .10), transparent 60%),
+    radial-gradient(900px 600px at 96% 112%, rgba(255, 179, 0, .09), transparent 60%),
+    var(--bg);
+  color: var(--ink);
+  font-family: var(--font-display);
+}
+
+/* Фоновая сетка, медленно уезжающая влево (как мир в игре) */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(0, 229, 255, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, .05) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+          mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+  animation: gridDrift 9s linear infinite;
+}
+
+@keyframes gridDrift { to { background-position: -64px 0, -64px 0; } }
+
+/* ── Декоративные фигуры ─────────────────────────────────── */
+
+.decor {
+  position: fixed;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .55;
+}
+
+.decor--cube {
+  width: 52px;
+  height: 52px;
+  border: 3px solid rgba(0, 229, 255, .4);
+  background: rgba(0, 229, 255, .06);
+  box-shadow: 0 0 24px rgba(0, 229, 255, .18), inset 0 0 14px rgba(0, 229, 255, .12);
+  animation: floatCube 9s ease-in-out infinite alternate;
+}
+
+.decor--cube    { top: 16%; left: 6%; }
+.decor--cube-2  { top: auto; left: auto; bottom: 14%; right: 7%; width: 34px; height: 34px;
+                  animation-duration: 12s; animation-delay: -4s; }
+
+.decor--spike {
+  width: 56px;
+  height: 48px;
+  background: linear-gradient(180deg, rgba(255, 179, 0, .28), rgba(255, 179, 0, .08));
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  filter: drop-shadow(0 0 10px rgba(255, 179, 0, .3));
+  animation: floatSpike 11s ease-in-out infinite alternate;
+}
+
+.decor--spike-1 { top: 20%; right: 9%; animation-delay: -2s; }
+.decor--spike-2 { bottom: 18%; left: 8%; width: 38px; height: 33px; animation-delay: -6s; }
+
+@keyframes floatCube  { from { transform: translateY(0)     rotate(42deg); }
+                        to   { transform: translateY(-18px) rotate(50deg); } }
+@keyframes floatSpike { from { transform: translateY(0)     rotate(-4deg); }
+                        to   { transform: translateY(-14px) rotate(5deg);  } }
+
+/* ── Сцена ───────────────────────────────────────────────── */
+
+.scene {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Ширина сцены: не шире окна и не выше, чем позволяет высота (16:9) */
+  width: min(94vw, calc(78vh * 16 / 9));
+  width: min(94vw, calc(78svh * 16 / 9));
+  max-width: 1440px;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.logo {
+  font-size: clamp(18px, 2.4vw, 26px);
+  letter-spacing: .08em;
+}
+
+.logo__slash { color: var(--cyan); text-shadow: 0 0 12px var(--cyan); padding: 0 2px; }
+
+.build-tag {
+  font-family: var(--font-mono);
+  font-size: clamp(10px, 1.2vw, 12px);
+  color: var(--ink-dim);
+  letter-spacing: .05em;
+}
+
+/* Контейнер 16:9. Адаптивность: внутреннее разрешение канваса
+   фиксировано (1280×720), а размер на экране задаёт этот блок. */
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, .55),
+    0 0 0 1px rgba(255, 255, 255, .06),
+    0 0 60px rgba(0, 229, 255, .07);
+}
+
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Угловые скобки «прицела» поверх канваса */
+.stage__frame { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+
+.stage__frame::before,
+.stage__frame::after {
+  content: '';
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 2px solid rgba(0, 229, 255, .55);
+}
+.stage__frame::before { top: 10px;    left: 10px;  border-right: 0; border-bottom: 0; }
+.stage__frame::after  { bottom: 10px; right: 10px; border-left: 0;  border-top: 0;    }
+
+/* ── HUD: счётчик FPS ────────────────────────────────────── */
+
+.hud {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+}
+
+.hud__fps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(7, 10, 24, .82);
+  border: 1px solid rgba(0, 229, 255, .35);
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .35), inset 0 0 12px rgba(0, 229, 255, .06);
+  font-family: var(--font-mono);
+}
+
+.hud__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse { 50% { opacity: .35; } }
+
+.hud__nums { display: flex; flex-direction: column; line-height: 1.15; }
+
+.hud__value b { font-size: 20px; font-weight: 700; color: #fff; }
+.hud__value small {
+  margin-left: 5px;
+  font-size: 10px;
+  letter-spacing: .14em;
+  color: var(--cyan);
+}
+
+.hud__ms { font-size: 10px; color: var(--ink-dim); }
+
+/* ── Подсказка снизу ─────────────────────────────────────── */
+
+.hint {
+  font-family: var(--font-mono);
+  font-size: clamp(10px, 1.3vw, 13px);
+  color: var(--ink-dim);
+  text-align: center;
+}
+
+.hint kbd {
+  padding: 2px 8px;
+  border: 1px solid rgba(234, 246, 255, .25);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .04);
+  font-family: inherit;
+}
+
+.hint__soon { opacity: .6; }
+
+::selection { background: rgba(0, 229, 255, .35); }
+
+/* ── Адаптивность и доступность ──────────────────────────── */
+
+@media (max-width: 640px) {
+  .decor { display: none; }
+  .scene { gap: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before, .decor, .hud__dot { animation: none; }
+}
